@@ -1,6 +1,6 @@
 flask
 supabase
-py3dns
+dnspython
 pandas
 tqdm
 gunicorn==20.1.0
