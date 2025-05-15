@@ -1,0 +1,3059 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Seat Monitoring System</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>  
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        /* Custom CSS for enhanced visuals */
+        .gradient-bg {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+        }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.15);
+        }
+        .switch-button {
+            position: relative;
+            width: 3.5rem;
+            height: 1.75rem;
+            border-radius: 9999px;
+        }
+        .switch-button input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 1.25rem;
+            width: 1.25rem;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #6366f1;
+        }
+        input:checked + .slider:before {
+            transform: translateX(1.6rem);
+        }
+        .custom-range {
+            -webkit-appearance: none;
+            height: 8px;
+            border-radius: 5px;
+            background: #e5e7eb;
+            outline: none;
+        }
+        .custom-range::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #6366f1;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+        .custom-range::-moz-range-thumb {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #6366f1;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+        .custom-range::-ms-thumb {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: #6366f1;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+        .animate-pulse {
+            animation: pulse 2s cubic-bezier(.4,0,.6,1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+        .breathe {
+            animation: breathe 6s ease-in-out infinite;
+        }
+        @keyframes breathe {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+        }
+        /* Custom tooltip */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 200px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 8px;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            margin-left: -100px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+        .tooltip .tooltiptext::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #333 transparent transparent transparent;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="gradient-bg text-white py-3 px-6 shadow-lg">
+        <div class="container mx-auto">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-3xl font-bold tracking-tight">Smart Seat Monitoring</h1>
+                    <p class="text-indigo-100">Track and improve your sitting habits</p>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center">
+                        <div id="connection-status" class="w-3 h-3 rounded-full bg-red-500 mr-2"></div>
+                        <span id="connection-text" class="text-sm font-medium">Disconnected</span>
+                    </div>
+                    <button id="connect-btn" class="px-4 py-2 bg-white text-indigo-700 rounded-lg hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-indigo-700 transition-all duration-300 shadow-md">
+                        Connect
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-4 py-6">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Current Status -->
+            <div class="glass-panel rounded-xl p-6 shadow-md">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800 flex items-center">
+                 
+                    Current Status
+                </h2>
+                <div class="flex items-center justify-center mb-6">
+                    <div id="sitting-indicator" class="w-36 h-36 rounded-full bg-gray-200 flex items-center justify-center transition-all duration-300 breathe">
+                        <span id="sitting-text" class="text-xl font-medium text-gray-600">No Data</span>
+                    </div>
+                </div>
+                <div class="space-y-5">
+                    <div>
+                        <div class="flex justify-between mb-2">
+                            <span class="text-sm font-medium text-gray-700 flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z" clip-rule="evenodd" />
+                                </svg>
+                                Pressure Level:
+                            </span>
+                            <span id="pressure-value" class="text-sm font-medium text-gray-700">0</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-3">
+                            <div id="pressure-bar" class="bg-gradient-to-r from-blue-400 to-indigo-600 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <span class="text-sm font-medium text-gray-700 flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-indigo-500" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
+                            </svg>
+                            Time Seated:
+                        </span>
+                        <span id="time-seated" class="text-lg font-bold text-indigo-600">00:00</span>
+                    </div>
+                    <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <span class="text-sm font-medium text-gray-700 flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-purple-500" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" />
+                            </svg>
+                            Motor Status:
+                        </span>
+                        <span id="motor-status" class="text-lg font-medium text-gray-500">Inactive</span>
+                    </div>
+                </div>
+                <div class="mt-6">
+                    <button id="vibrate-btn" class="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 transition duration-300 shadow-md flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd" />
+                        </svg>
+                        Trigger Vibration
+                    </button>
+                </div>
+            </div>
+
+            <!-- Settings -->
+            <div class="glass-panel rounded-xl p-6 shadow-md">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800 flex items-center">
+                  
+                    Settings
+                </h2>
+                <form id="settings-form" class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M5 2a1 1 0 011 1v1h1a1 1 0 010 2H6v1a1 1 0 01-2 0V6H3a1 1 0 010-2h1V3a1 1 0 011-1zm0 10a1 1 0 011 1v1h1a1 1 0 110 2H6v1a1 1 0 11-2 0v-1H3a1 1 0 110-2h1v-1a1 1 0 011-1zM12 2a1 1 0 01.967.744L14.146 7.2 17.5 9.134a1 1 0 010 1.732l-3.354 1.935-1.18 4.455a1 1 0 01-1.933 0L9.854 12.8 6.5 10.866a1 1 0 010-1.732l3.354-1.935 1.18-4.455A1 1 0 0112 2z" clip-rule="evenodd" />
+                            </svg>
+                            Pressure Threshold
+                            <div class="tooltip ml-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+                                </svg>
+                                <span class="tooltiptext">How much pressure is needed to detect sitting</span>
+                            </div>
+                        </label>
+                        <div class="flex items-center space-x-3">
+                            <span class="text-xs font-medium text-gray-500">Very Low</span>
+                            <input type="range" id="threshold-slider" min="10" max="1000" value="100" class="w-full custom-range" step="5">
+                            <span class="text-xs font-medium text-gray-500">Very High</span>
+                            <span id="threshold-value" class="ml-2 w-14 text-right bg-gray-100 px-2 py-1 rounded text-indigo-700 font-semibold">100</span>
+                        </div>
+                        <div class="mt-2 flex justify-between">
+                            <button type="button" id="threshold-preset-low" class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded">Low</button>
+                            <button type="button" id="threshold-preset-med" class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded">Medium</button>
+                            <button type="button" id="threshold-preset-high" class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded">High</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-indigo-500" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
+                            </svg>
+                            Sitting Time Alert
+                            <div class="tooltip ml-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+                                </svg>
+                                <span class="tooltiptext">How long before vibration alert is triggered</span>
+                            </div>
+                        </label>
+                        <div class="flex items-center">
+                            <input type="range" id="time-slider" min="5" max="600" value="60" class="w-full custom-range" step="5">
+                            <div class="ml-3 flex items-center">
+                                <input type="number" id="time-value-input" min="5" max="600" value="60" class="w-16 text-center py-1 border rounded">
+                                <select id="time-unit" class="ml-2 py-1 bg-gray-100 rounded border border-gray-300">
+                                    <option value="seconds">sec</option>
+                                    <option value="minutes">min</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mt-2 flex justify-between">
+                            <button type="button" id="time-preset-short" class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded">30s</button>
+                            <button type="button" id="time-preset-med" class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded">2m</button>
+                            <button type="button" id="time-preset-long" class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded">5m</button>
+                            <button type="button" id="time-preset-verylong" class="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded">10m</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-purple-500" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd" />
+                            </svg>
+                            Vibration Duration
+                            <div class="tooltip ml-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+                                </svg>
+                                <span class="tooltiptext">How long the vibration motor will run</span>
+                            </div>
+                        </label>
+                        <div class="flex items-center">
+                            <input type="range" id="vibration-slider" min="1" max="30" value="3" class="w-full custom-range">
+                            <div class="ml-3 flex items-center">
+                                <input type="number" id="vibration-value-input" min="1" max="30" value="3" class="w-16 text-center py-1 border rounded">
+                                <span class="ml-2 text-gray-700">sec</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="pt-2">
+                        <div class="flex justify-between items-center mb-3">
+                            <label class="text-sm font-medium text-gray-700 flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-green-500" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                </svg>
+                                Auto-Alert
+                                <div class="tooltip ml-1">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd" />
+                                    </svg>
+                                    <span class="tooltiptext">Automatically trigger alerts when sitting too long</span>
+                                </div>
+                            </label>
+                            <label class="switch-button">
+                                <input type="checkbox" id="auto-alert-toggle" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <button type="submit" class="w-full py-3 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 focus:outline-none focus:ring-2 focus:ring-green-300 transition duration-300 shadow-md flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                        </svg>
+                        Save Settings
+                    </button>
+                </form>
+            </div>
+
+            <!-- Today's Summary -->
+            <div class="glass-panel rounded-xl p-6 shadow-md">
+                <h2 class="text-xl font-semibold mb-4 text-gray-800 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-indigo-600" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
+                    </svg>
+                    Today's Summary
+                </h2>
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <div class="p-4 bg-blue-50 rounded-lg text-center border border-blue-100 hover:shadow-md transition-all duration-300">
+                        <h3 class="text-sm font-medium text-gray-600 mb-1 flex items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
+                            </svg>
+                            Total Sitting Time
+                        </h3>
+                        <p id="today-sitting-time" class="text-2xl font-bold text-blue-600">00:00:00</p>
+                    </div>
+                    <div class="p-4 bg-green-50 rounded-lg text-center border border-green-100 hover:shadow-md transition-all duration-300">
+                        <h3 class="text-sm font-medium text-gray-600 mb-1 flex items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-green-600" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                            </svg>
+                            Alerts Today
+                        </h3>
+                        <p id="today-alerts" class="text-2xl font-bold text-green-600">0</p>
+                    </div>
+                    <div class="p-4 bg-purple-50 rounded-lg text-center border border-purple-100 hover:shadow-md transition-all duration-300">
+                        <h3 class="text-sm font-medium text-gray-600 mb-1 flex items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-purple-600" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M3 6a3 3 0 013-3h10a1 1 0 01.8 1.6L14.25 8l2.55 3.4A1 1 0 0116 13H6a1 1 0 00-1 1v3a1 1 0 11-2 0V6z" clip-rule="evenodd" />
+                            </svg>
+                            Stand-up Breaks
+                        </h3>
+                        <p id="today-standups" class="text-2xl font-bold text-purple-600">0</p>
+                    </div>
+                    <div class="p-4 bg-yellow-50 rounded-lg text-center border border-yellow-100 hover:shadow-md transition-all duration-300">
+                        <h3 class="text-sm font-medium text-gray-600 mb-1 flex items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-yellow-600" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
+                            </svg>
+                            Longest Stretch
+                        </h3>
+                        <p id="longest-stretch" class="text-2xl font-bold text-yellow-600">00:00</p>
+                    </div>
+                </div>
+         <div class="summary-section glass-panel rounded-xl p-6 shadow-md">
+    <h2 class="text-xl font-semibold mb-4 text-gray-800 flex items-center">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-purple-600" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" />
+        </svg>
+        AI Insights
+    </h2>
+    <div class="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+        <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center space-x-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-purple-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zm3 5a1 1 0 00-1-1H6a1 1 0 000 1v2a1 1 0 001 1h1a1 1 0 001-1v-2zm5-5a3 3 0 11-6 0 3 3 0 016 0zm-9 0a2 2 0 112 2 2 2 0 01-2-2z" />
+                </svg>
+                <span class="text-sm font-medium text-gray-700">Real-time Insights</span>
+            </div>
+            <button id="refresh-insights-btn" class="text-gray-500 hover:text-purple-600 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
+                </svg>
+            </button>
+        </div>
+        <div id="insights-text" class="text-gray-600 text-sm bg-gray-50 p-3 rounded-lg min-h-[4rem] flex items-center">
+            Waiting for AI insights...
+        </div>
+    </div>
+</div>
+
+<script>
+    // Add event listener for refresh button
+    const refreshInsightsBtn = document.getElementById('refresh-insights-btn');
+    if (refreshInsightsBtn) {
+        refreshInsightsBtn.addEventListener('click', function() {
+            // You can add a function to manually trigger insights refresh
+            // For example, republish the last known insights or fetch new ones
+            const insightsText = document.getElementById('insights-text');
+            insightsText.textContent = 'Refreshing insights...';
+            
+            // If you have a function to fetch latest insights, call it here
+            // For example: fetchLatestInsights();
+        });
+    }
+</script>
+<script src="https://unpkg.com/mqtt@5.0.0/dist/mqtt.min.js"></script>
+<script>
+    // MQTT Configuration
+    const MQTT_BROKER = 'wss://7f94900f5ded4432bfe7cc8d5378ec95.s1.eu.hivemq.cloud:8884/mqtt';
+    const MQTT_CLIENT_ID = `web_client_${Math.random().toString(16).slice(3)}`;
+    const MQTT_USERNAME = 'hamzamaqsoodfc786';
+    const MQTT_PASSWORD = 'Asadaotaf786@';
+    const TOPIC_AI_INSIGHTS = 'seat/ai_insights';
+
+    // Initialize MQTT client
+    const client1 = mqtt.connect(MQTT_BROKER, {
+        clientId: MQTT_CLIENT_ID,
+        username: MQTT_USERNAME,
+        password: MQTT_PASSWORD,
+        protocolVersion: 5
+    });
+
+    // Handle connection
+    client1.on('connect', () => {
+        console.log('Connected to MQTT broker');
+        client1.subscribe(TOPIC_AI_INSIGHTS, (err) => {
+            if (!err) {
+                console.log(`Subscribed to ${TOPIC_AI_INSIGHTS}`);
+            } else {
+                console.error('Subscription error:', err);
+            }
+        });
+    });
+
+    // Handle incoming messages
+    client1.on('message', (topic, message) => {
+        if (topic === TOPIC_AI_INSIGHTS) {
+            try {
+                const payload = JSON.parse(message.toString());
+                const insightsText = document.getElementById('insights-text');
+                
+                // Format the insight based on event type
+                let insightMessage = '';
+                if (payload.event === 'sitting_started') {
+                    insightMessage = `You started sitting at ${new Date(payload.timestamp).toLocaleTimeString()}. `;
+                    if (payload.suggestion) {
+                        insightMessage += payload.suggestion;
+                    } else {
+                        insightMessage += 'Try to take a break soon!';
+                    }
+                } else if (payload.event === 'sitting_ended') {
+                    insightMessage = `You sat for ${payload.duration_minutes} minutes. ${payload.comparison || 'Good job taking a break!'}`;
+                } else if (payload.event === 'long_sitting_alert') {
+                    insightMessage = `You've been sitting for ${payload.duration_minutes} minutes! ${payload.suggestion || 'Time to stand up.'}`;
+                    if (payload.time_suggestion) {
+                        insightMessage += ` ${payload.time_suggestion}`;
+                    }
+                } else if (payload.event === 'ai_analysis') {
+                    insightMessage = payload.insights.join(' ') + ' ' + (payload.recommendations.join(' ') || 'Keep up the good work!');
+                } else if (payload.event === 'weekly_report') {
+                    insightMessage = `Weekly report: ${payload.session_count} sessions. ${payload.recommendations.join(' ')}`;
+                } else if (payload.status) {
+                    insightMessage = payload.status;
+                }
+                
+                insightsText.textContent = insightMessage;
+            } catch (e) {
+                console.error('Error parsing MQTT message:', e);
+            }
+        }
+    });
+
+    // Handle errors
+    client1.on('error', (err) => {
+        console.error('MQTT error:', err);
+        document.getElementById('insights-text').textContent = 'Error connecting to AI insights.';
+    });
+
+    // Handle disconnection
+    client1.on('close', () => {
+        console.log('Disconnected from MQTT broker');
+        document.getElementById('insights-text').textContent = 'Disconnected from AI insights.';
+    });
+</script>
+            </div>
+    </div>
+    
+<!-- AI Recommendations Section -->
+<div class="glass-panel rounded-xl p-6 shadow-md mt-6">
+    <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-semibold text-gray-800 flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-purple-600" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" clip-rule="evenodd" />
+            </svg>
+            AI Smart Recommendations
+        </h2>
+        <div class="flex items-center">
+            <span class="text-sm font-medium text-gray-700 mr-2">Enable AI:</span>
+            <label class="switch-button">
+                <input type="checkbox" id="ai-toggle" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+    </div>
+    
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- AI Status and Stats -->
+        <div class="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+            <h3 class="text-md font-semibold text-gray-700 mb-3 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M2 10a8 8 0 018-8v8h8a8 8 0 11-16 0z" />
+                    <path d="M12 2.252A8.014 8.014 0 0117.748 8H12V2.252z" />
+                </svg>
+                Status & Statistics
+            </h3>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div class="bg-blue-50 p-3 rounded-lg text-center">
+                    <div class="text-xs text-gray-500 mb-1">Current Mode</div>
+                    <div id="ai-mode" class="font-bold text-blue-600">Learning</div>
+                </div>
+                <div class="bg-green-50 p-3 rounded-lg text-center">
+                    <div class="text-xs text-gray-500 mb-1">Prediction Confidence</div>
+                    <div id="ai-confidence" class="font-bold text-green-600">0%</div>
+                </div>
+                <div class="bg-purple-50 p-3 rounded-lg text-center">
+                    <div class="text-xs text-gray-500 mb-1">Smart Alerts</div>
+                    <div id="ai-alerts" class="font-bold text-purple-600">0</div>
+                </div>
+                <div class="bg-yellow-50 p-3 rounded-lg text-center">
+                    <div class="text-xs text-gray-500 mb-1">Prevented Alerts</div>
+                    <div id="ai-prevented" class="font-bold text-yellow-600">0</div>
+                </div>
+            </div>
+            <div class="flex justify-center mt-4">
+                <button id="ai-settings-button" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" />
+                    </svg>
+                    Recommended Settings
+                </button>
+            </div>
+        </div>
+        
+        <!-- AI Prediction Log -->
+        <div class="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+            <h3 class="text-md font-semibold text-gray-700 mb-3 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-indigo-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z" />
+                </svg>
+                Prediction Log
+            </h3>
+            <div id="ai-log" class="h-48 overflow-y-auto text-sm text-gray-600 bg-gray-50 p-3 rounded-lg mb-3 font-mono">
+                <div class="text-gray-400">AI system initialized...</div>
+            </div>
+            <div class="flex justify-end">
+                <button id="clear-log-btn" class="px-3 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-all flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                    Clear Log
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- AI Settings Modal -->
+<div id="ai-settings-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl p-8 max-w-md w-full shadow-2xl">
+        <h2 class="text-xl font-semibold mb-4 text-gray-800 flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-purple-600" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" />
+            </svg>
+            AI Recommended Settings
+        </h2>
+        <div id="ai-recommendations-content" class="space-y-4">
+            <div class="bg-purple-50 p-4 rounded-lg">
+                <h3 class="font-semibold text-purple-700 mb-2">Optimal Settings Based on Your Usage</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm font-medium text-gray-600">Pressure Threshold:</span>
+                        <span id="ai-rec-threshold" class="text-sm font-bold text-purple-600">175</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm font-medium text-gray-600">Sitting Time Alert:</span>
+                        <span id="ai-rec-time" class="text-sm font-bold text-purple-600">45 seconds</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm font-medium text-gray-600">Vibration Duration:</span>
+                        <span id="ai-rec-vibration" class="text-sm font-bold text-purple-600">3 seconds</span>
+                    </div>
+                </div>
+            </div>
+            <p class="text-sm text-gray-600">
+                These settings are machine learning-based recommendations calculated from your sitting patterns 
+                and previous interactions with the system.
+            </p>
+            <div class="flex justify-between mt-6">
+                <button id="cancel-ai-settings" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-300 transition duration-300">
+                    Cancel
+                </button>
+                <button id="apply-ai-settings" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-300 shadow-md transition duration-300">
+                    Apply Settings
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+    // Add this to your existing variables at the top
+let useAiForAlerts = false; // Flag to completely switch to AI control when true
+
+// Update the AI toggle function to completely switch control modes
+function toggleAI() {
+    aiEnabled = aiToggle.checked;
+    useAiForAlerts = aiEnabled; // When AI is enabled, switch to AI-only for alerts
+    
+    if (aiEnabled) {
+        logToAi('AI system enabled - AI will now control all alerts', 'system');
+        startAiPredictionInterval();
+        // Show a notification to the user
+        showNotification('AI Mode', 'AI is now controlling vibration alerts. Your saved settings are temporarily disabled.', 'info');
+    } else {
+        logToAi('AI system disabled - Reverting to manual settings', 'system');
+        stopAiPredictionInterval();
+        // Show a notification to the user
+        showNotification('Manual Mode', 'Using your saved settings for alerts. AI recommendations are disabled.', 'info');
+    }
+}
+
+// Modify the existing checkAndTriggerAutoAlert function to respect AI mode
+function checkAndTriggerAutoAlert(seatedDuration) {
+    // If AI mode is active, do not process manual alerts at all
+    if (useAiForAlerts) {
+        return; // AI system will handle alerts instead
+    }
+    
+    // Continue with the original function only if not in AI mode
+    if (!autoAlertEnabled || !isSitting || isMotorActive || alertCooldownActive) {
+        return;
+    }
+    
+    // Convert sitting time threshold to milliseconds
+    const thresholdMs = timeSetting * 1000;
+    
+    // Only trigger alerts at precise multiples of the threshold
+    if (seatedDuration >= thresholdMs) {
+        const multiple = Math.floor(seatedDuration / thresholdMs);
+        const lastThreshold = localStorage.getItem('lastAlertThreshold');
+        
+        // Only alert if this is a new threshold multiple
+        if (lastThreshold === null || parseInt(lastThreshold) < multiple) {
+            console.log(`Auto-alert triggered: seated for ${Math.round(seatedDuration/1000)}s, threshold: ${timeSetting}s, multiple: ${multiple}`);
+            localStorage.setItem('lastAlertThreshold', multiple);
+            triggerVibration(); // This uses the manual system
+        }
+    }
+}
+
+// Update the prediction function to completely take over alert control when AI is active
+function predictVibration(fsrValue, sittingTimeSeconds) {
+    if (!aiEnabled) return;
+    
+    fetch(`${API_BASE_URL}/predict`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            fsr_value: fsrValue,
+            sitting_time_seconds: sittingTimeSeconds
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        // Update confidence display
+        const confidencePercent = Math.round(data.confidence * 100);
+        aiConfidence.textContent = `${confidencePercent}%`;
+        
+        // Update mode display based on confidence
+        if (confidencePercent < 60) {
+            aiMode.textContent = 'Learning';
+        } else if (confidencePercent < 85) {
+            aiMode.textContent = 'Adaptive';
+        } else {
+            aiMode.textContent = 'Confident';
+        }
+        
+        // Log prediction results
+        logToAi(`FSR: ${fsrValue}, Time: ${sittingTimeSeconds}s, Prediction: ${data.should_vibrate ? 'Alert' : 'No Alert'} (${confidencePercent}% confidence)`, 'prediction');
+        
+        // Handle vibration based on prediction - ONLY if useAiForAlerts is true
+        if (useAiForAlerts) {
+            if (data.should_vibrate) {
+                // Only trigger if AI is enabled and we're not already vibrating
+                if (!isMotorActive && !alertCooldownActive) {
+                    logToAi(`AI triggered vibration alert after ${sittingTimeSeconds}s of sitting`, 'alert');
+                    aiAlertCount++;
+                    aiAlerts.textContent = aiAlertCount;
+                    triggerAiVibration(); // Use a separate function for AI vibrations
+                }
+            } else {
+                // Log that AI decided not to alert (only on certain intervals to avoid log spam)
+                if (sittingTimeSeconds >= 60 && sittingTimeSeconds % 30 === 0) { // Log every 30 seconds after the first minute
+                    logToAi(`AI determined no alert needed at ${sittingTimeSeconds}s`, 'prevented');
+                }
+            }
+        } else {
+            // If AI is on but not controlling alerts, just log recommendations
+            if (data.should_vibrate && !isMotorActive && sittingTimeSeconds % 15 === 0) {
+                logToAi(`AI would recommend an alert now (advisory only)`, 'info');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error calling prediction API:', error);
+        logToAi(`API error: ${error.message}`, 'info');
+    });
+}
+
+// Add a completely separate AI vibration function that doesn't use any manual settings
+// Update triggerAiVibration to respect the recommended time
+function triggerAiVibration() {
+    if (!connected) {
+        addToAiLog("Error: MQTT broker not connected", "error");
+        return;
+    }
+    
+    if (isMotorActive || alertCooldownActive) {
+        addToAiLog("Cannot trigger: vibration already active", "info");
+        return;
+    }
+    
+    // Get current recommendation settings
+    const timeText = document.getElementById('ai-rec-time')?.textContent || "1 minutes 0 seconds";
+    const minutesMatch = timeText.match(/(\d+) minutes/);
+    const secondsMatch = timeText.match(/(\d+) seconds/);
+    
+    let recommendedSeconds = 60; // Default to 1 minute
+    if (minutesMatch && minutesMatch[1]) {
+        recommendedSeconds += parseInt(minutesMatch[1]) * 60;
+    }
+    if (secondsMatch && secondsMatch[1]) {
+        recommendedSeconds += parseInt(secondsMatch[1]);
+    }
+    
+    // Check current sitting time
+    const currentTime = Date.now();
+    const sittingTime = Math.floor((currentTime - startSittingTime) / 1000);
+    
+    // If we have high pressure but it's too early based on recommendations,
+    // log a warning but don't vibrate yet
+    if (sittingTime < 30) {
+        addToAiLog(`High pressure detected but waiting until at least 30 seconds of sitting (currently ${sittingTime}s)`, "info");
+        return;
+    }
+    
+    try {
+        // Prepare MQTT message
+        const command = { motor: true };
+        const message = new Paho.MQTT.Message(JSON.stringify(command));
+        message.destinationName = TOPICS.COMMAND;
+        
+        // Send command
+        client.send(message);
+        addToAiLog("Vibration command sent", "alert");
+        
+        // Update motor status
+        motorStatus.textContent = 'AI Alert';
+        motorStatus.classList.remove('text-gray-500');
+        motorStatus.classList.add('text-purple-600', 'animate-pulse', 'font-bold');
+        
+        // Set flags
+        isMotorActive = true;
+        alertCooldownActive = true;
+        
+        // Record to database
+        recordAiAlert();
+        
+        // Set timers for reset
+        const vibrationDuration = 3000; // 3 seconds
+        
+        setTimeout(() => {
+            motorStatus.textContent = 'Inactive';
+            motorStatus.classList.remove('text-purple-600', 'animate-pulse', 'font-bold');
+            motorStatus.classList.add('text-gray-500');
+            isMotorActive = false;
+        }, vibrationDuration);
+        
+        setTimeout(() => {
+            alertCooldownActive = false;
+        }, 5000); // 5 second cooldown
+        
+    } catch (error) {
+        console.error("AI System: Error triggering vibration:", error);
+        addToAiLog(`Error: ${error.message}`, "error");
+        
+        // Reset flags in case of error
+        isMotorActive = false;
+        alertCooldownActive = false;
+    }
+}
+</script>
+    <!-- Analytics Section -->
+    <div class="mt-6 glass-panel rounded-xl p-6 shadow-md">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-xl font-semibold text-gray-800 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-indigo-600" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+                </svg>
+                Sitting Analytics
+            </h2>
+            <div class="flex items-center">
+                <label class="mr-2 text-sm font-medium text-gray-700">Date:</label>
+                <input type="date" id="date-selector" class="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300">
+                <button id="load-data-btn" class="ml-2 px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-300 shadow-md transition duration-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div class="h-72 bg-white p-3 rounded-lg shadow-sm">
+            <canvas id="sitting-chart"></canvas>
+        </div>
+        <div class="mt-8">
+            <div class="flex justify-between items-center mb-3">
+                <h3 class="text-lg font-medium text-gray-800 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-indigo-600" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z" />
+                    </svg>
+                    Session History
+                </h3>
+                <div class="flex">
+                    <button id="export-data-btn" class="px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-300 shadow-sm transition duration-300 text-sm flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                        Export
+                    </button>
+                </div>
+            </div>
+            <div class="overflow-x-auto bg-white rounded-lg shadow-sm">
+                <table class="min-w-full">
+                    <thead>
+                        <tr class="bg-gray-50 text-gray-700 text-sm uppercase font-semibold border-b">
+                            <th class="py-3 px-4 text-left rounded-tl-lg">Start Time</th>
+                            <th class="py-3 px-4 text-left">End Time</th>
+                            <th class="py-3 px-4 text-left">Duration</th>
+                            <th class="py-3 px-4 text-left rounded-tr-lg">Alerts</th>
+                        </tr>
+                    </thead>
+                    <tbody id="session-table-body" class="text-gray-600">
+                        <tr>
+                            <td colspan="4" class="py-6 px-4 text-center text-gray-500">No data available</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Connection Settings Modal -->
+<div id="settings-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl p-8 max-w-md w-full shadow-2xl">
+        <h2 class="text-xl font-semibold mb-4 text-gray-800 flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-indigo-600" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M7 2a1 1 0 00-.707 1.707L7.586 5H7a3 3 0 00-3 3v9a3 3 0 003 3h8a3 3 0 003-3V8a3 3 0 00-3-3h-.586l1.293-1.293A1 1 0 1015 2.707l-2 2A1 1 0 0012.586 5H9.414a1 1 0 00-.707-.293l-2-2zM7 8h8a1 1 0 011 1v5a1 1 0 01-1 1H7a1 1 0 01-1-1V9a1 1 0 011-1z" clip-rule="evenodd" />
+            </svg>
+            Connection Settings
+        </h2>
+        <form id="connection-form" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Broker URL</label>
+                <input type="text" id="broker-url" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300" value="broker.hivemq.com">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Port</label>
+                <input type="number" id="broker-port" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300" value="8000">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Client ID</label>
+                <input type="text" id="broker-client-id" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300" value="dashboard_client">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Supabase URL</label>
+                <input type="text" id="supabase-url" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300" value="https://wgjbmfqffnvuinhptntn.supabase.co">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Supabase Key</label>
+                <input type="text" id="supabase-key" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndnamJtZnFmZm52dWluaHB0bnRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYzODE3MjksImV4cCI6MjA2MTk1NzcyOX0.gZZ_dMNMnQeFhx35Cy4GPoEU2e9zvuHZYOaBvaIQPm8">
+            </div>
+            <div class="flex justify-end space-x-2 pt-4">
+                <button type="button" id="cancel-settings" class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-300 transition duration-300">
+                    Cancel
+                </button>
+                <button type="submit" class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-300 shadow-md transition duration-300">
+                    Save & Connect
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Notification Toast -->
+<div id="notification-toast" class="fixed bottom-5 right-5 bg-white p-4 rounded-lg shadow-lg border-l-4 border-green-500 transform translate-y-20 opacity-0 transition-all duration-500 hidden max-w-sm">
+    <div class="flex items-center">
+        <div class="text-green-500 mr-3">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        </div>
+        <div>
+            <h4 class="font-semibold text-gray-800" id="toast-title">Success!</h4>
+            <p class="text-sm text-gray-600" id="toast-message">Action completed successfully.</p>
+        </div>
+        <button id="close-toast" class="ml-4 text-gray-400 hover:text-gray-600">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+            </svg>
+        </button>
+    </div>
+</div>
+
+<script>
+      // DOM Elements (unchanged)
+        const connectionStatus = document.getElementById('connection-status');
+        const connectionText = document.getElementById('connection-text');
+        const connectBtn = document.getElementById('connect-btn');
+        const sittingIndicator = document.getElementById('sitting-indicator');
+        const sittingText = document.getElementById('sitting-text');
+        const pressureValue = document.getElementById('pressure-value');
+        const pressureBar = document.getElementById('pressure-bar');
+        const timeSeated = document.getElementById('time-seated');
+        const motorStatus = document.getElementById('motor-status');
+        const vibrateBtn = document.getElementById('vibrate-btn');
+        const settingsForm = document.getElementById('settings-form');
+        const thresholdSlider = document.getElementById('threshold-slider');
+        const thresholdValue = document.getElementById('threshold-value');
+        const timeSlider = document.getElementById('time-slider');
+        const timeValueInput = document.getElementById('time-value-input');
+        const timeUnit = document.getElementById('time-unit');
+        const vibrationSlider = document.getElementById('vibration-slider');
+        const vibrationValueInput = document.getElementById('vibration-value-input');
+        const autoAlertToggle = document.getElementById('auto-alert-toggle');
+        const dateSelector = document.getElementById('date-selector');
+        const loadDataBtn = document.getElementById('load-data-btn');
+        const exportDataBtn = document.getElementById('export-data-btn');
+        const todaySittingTime = document.getElementById('today-sitting-time');
+        const todayAlerts = document.getElementById('today-alerts');
+        const todayStandups = document.getElementById('today-standups');
+        const longestStretch = document.getElementById('longest-stretch');
+        const aiRecommendations = document.getElementById('ai-recommendations');
+        const settingsModal = document.getElementById('settings-modal');
+        const connectionForm = document.getElementById('connection-form');
+        const cancelSettings = document.getElementById('cancel-settings');
+        const sessionTableBody = document.getElementById('session-table-body');
+        const notificationToast = document.getElementById('notification-toast');
+        const toastTitle = document.getElementById('toast-title');
+        const toastMessage = document.getElementById('toast-message');
+        const closeToast = document.getElementById('close-toast');
+        
+        const USER_ID = "test_user";
+
+        // MQTT Configuration - Updated with your HiveMQ Cloud credentials
+        let mqttConfig = {
+            host: '7f94900f5ded4432bfe7cc8d5378ec95.s1.eu.hivemq.cloud',
+            port: 8883, // Secure WebSocket port
+            clientId: 'dashboard_' + Math.random().toString(16).substr(2, 8),
+            username: 'hamzamaqsoodfc786',
+            password: 'Asadaotaf786@',
+            useSSL: true
+        };
+
+        // Supabase Configuration (unchanged)
+        let supabaseConfig = {
+            url: 'https://wgjbmfqffnvuinhptntn.supabase.co',
+            key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndnamJtZnFmZm52dWluaHB0bnRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDYzODE3MjksImV4cCI6MjA2MTk1NzcyOX0.gZZ_dMNMnQeFhx35Cy4GPoEU2e9zvuHZYOaBvaIQPm8'
+        };
+
+        let supabase = null;
+        let thresholdSetting = 100;
+        let timeSetting = 60; // seconds
+        let vibrationSetting = 3; // seconds
+        let autoAlertEnabled = true;
+
+        // MQTT Topics (unchanged)
+        const TOPICS = {
+            SENSOR_DATA: 'seat/sensor',
+            SETTINGS: 'seat/settings',
+            COMMAND: 'seat/command',
+            AI_INSIGHTS: 'seat/ai_insights'
+        };
+
+        let client;
+        let connected = false;
+        let startSittingTime = null;
+        let isSitting = false;
+        let alertCount = 0;
+        let sessionData = [];
+        let sittingChart;
+
+        // AI Analysis variables (moved from main.py)
+        let lastAnalysisTime = 0;
+        const ANALYSIS_INTERVAL = 15 * 60 * 1000; // 15 minutes
+
+        // Initialize (updated to auto-connect on load)
+        document.addEventListener('DOMContentLoaded', function() {
+            dateSelector.valueAsDate = new Date();
+            initChart();
+            loadSavedSettings();
+            initSupabase();
+            connectMQTT(); // Auto-connect on load
+
+            // Event listeners (unchanged)
+            connectBtn.addEventListener('click', showConnectionModal);
+            cancelSettings.addEventListener('click', hideConnectionModal);
+            connectionForm.addEventListener('submit', handleConnectionForm);
+            settingsForm.addEventListener('submit', handleSettingsForm);
+            vibrateBtn.addEventListener('click', triggerVibration);
+            loadDataBtn.addEventListener('click', loadDailyData);
+            closeToast.addEventListener('click', hideNotification);
+            exportDataBtn.addEventListener('click', exportSessionData);
+
+            // Range sliders (unchanged)
+            thresholdSlider.addEventListener('input', function() {
+                thresholdValue.textContent = this.value;
+            });
+            timeSlider.addEventListener('input', updateTimeFromSlider);
+            timeValueInput.addEventListener('input', updateSliderFromInput);
+            timeUnit.addEventListener('change', handleTimeUnitChange);
+            vibrationSlider.addEventListener('input', function() {
+                vibrationValueInput.value = this.value;
+            });
+            vibrationValueInput.addEventListener('input', function() {
+                vibrationSlider.value = this.value;
+            });
+
+            // Preset buttons (unchanged)
+            thresholdPresetLow.addEventListener('click', () => setThresholdPreset(50));
+            thresholdPresetMed.addEventListener('click', () => setThresholdPreset(200));
+            thresholdPresetHigh.addEventListener('click', () => setThresholdPreset(500));
+            timePresetShort.addEventListener('click', () => setTimePreset(30, 'seconds'));
+            timePresetMed.addEventListener('click', () => setTimePreset(2, 'minutes'));
+            timePresetLong.addEventListener('click', () => setTimePreset(5, 'minutes'));
+            timePresetVeryLong.addEventListener('click', () => setTimePreset(10, 'minutes'));
+
+            // Start periodic AI analysis
+        
+        });
+
+        // [Existing functions unchanged for brevity: setThresholdPreset, setTimePreset, updateTimeFromSlider, updateSliderFromInput, handleTimeUnitChange, initChart, showConnectionModal, hideConnectionModal]
+
+        function handleConnectionForm(e) {
+            e.preventDefault();
+            mqttConfig.host = document.getElementById('broker-url').value;
+            mqttConfig.port = parseInt(document.getElementById('broker-port').value);
+            mqttConfig.clientId = document.getElementById('broker-client-id').value;
+            supabaseConfig.url = document.getElementById('supabase-url').value;
+            supabaseConfig.key = document.getElementById('supabase-key').value;
+
+            localStorage.setItem('mqttConfig', JSON.stringify(mqttConfig));
+            localStorage.setItem('supabaseConfig', JSON.stringify(supabaseConfig));
+
+            initSupabase();
+            connectMQTT();
+            hideConnectionModal();
+            showNotification('Connection', 'Connection settings saved and connecting...', 'info');
+        }
+
+        function connectMQTT() {
+            if (!mqttConfig.host) {
+                showNotification('Error', 'Please provide MQTT broker URL', 'error');
+                return;
+            }
+
+            connectionText.textContent = 'Connecting...';
+
+            client = new Paho.MQTT.Client(mqttConfig.host, Number(mqttConfig.port), mqttConfig.clientId);
+
+            client.onConnectionLost = onConnectionLost;
+            client.onMessageArrived = onMessageArrived;
+
+            const options = {
+                onSuccess: onConnect,
+                onFailure: onConnectFailure,
+                timeout: 30,
+                userName: mqttConfig.username,
+                password: mqttConfig.password,
+                useSSL: mqttConfig.useSSL
+            };
+
+            try {
+                client.connect(options);
+            } catch (error) {
+                console.error('Connection error:', error);
+                connectionText.textContent = 'Connection Failed';
+                showNotification('Error', 'Failed to connect to MQTT broker', 'error');
+            }
+        }
+
+        function onConnect() {
+            connected = true;
+            connectionStatus.classList.remove('bg-red-500');
+            connectionStatus.classList.add('bg-green-500');
+            connectionText.textContent = 'Connected';
+
+            client.subscribe(TOPICS.SENSOR_DATA);
+            client.subscribe(TOPICS.AI_INSIGHTS);
+            console.log(`Subscribed to ${TOPICS.SENSOR_DATA} and ${TOPICS.AI_INSIGHTS}`);
+
+            if (isSitting) {
+                startContinuousTimeUpdate();
+            }
+
+            sendSettings();
+            loadDailyData();
+            showNotification('Success', 'Connected to MQTT broker successfully!', 'success');
+        }
+
+        // [Existing functions unchanged for brevity: onConnectFailure, onConnectionLost, onMessageArrived, handleSensorData, handleAIInsights, sendSettings, initSupabase, loadSettingsFromSupabase, saveSettingsToSupabase, startContinuousTimeUpdate, stopContinuousTimeUpdate, updateAnalytics, updateSessionTable, handleSettingsForm, loadSavedSettings]
+
+        // Enhanced AI Analysis (replacing main.py functionality)
+     
+    function setThresholdPreset(value) {
+        thresholdSlider.value = value;
+        thresholdValue.textContent = value;
+    }
+
+    function setTimePreset(value, unit) {
+        if (unit === 'seconds') {
+            timeUnit.value = 'seconds';
+            timeSlider.max = 600;
+            timeSlider.value = value;
+            timeValueInput.value = value;
+        } else {
+            timeUnit.value = 'minutes';
+                timeSlider.max = 600;
+                timeSlider.value = value * 60;
+                timeValueInput.value = value;
+            }
+        }
+
+        function updateTimeFromSlider() {
+            if (timeUnit.value === 'seconds') {
+                timeValueInput.value = timeSlider.value;
+            } else {
+                timeValueInput.value = Math.floor(timeSlider.value / 60);
+            }
+        }
+
+        function updateSliderFromInput() {
+            if (timeUnit.value === 'seconds') {
+                timeSlider.value = timeValueInput.value;
+            } else {
+                timeSlider.value = timeValueInput.value * 60;
+            }
+        }
+
+        function handleTimeUnitChange() {
+            if (timeUnit.value === 'seconds') {
+                timeValueInput.value = timeSlider.value;
+            } else {
+                timeValueInput.value = Math.floor(timeSlider.value / 60);
+            }
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('sitting-chart').getContext('2d');
+            sittingChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: Array.from({length: 24}, (_, i) => `${String(i).padStart(2, '0')}:00`),
+                    datasets: [{
+                        label: 'Sitting Time (minutes)',
+                        data: Array(24).fill(0),
+                        backgroundColor: 'rgba(99, 102, 241, 0.7)',
+                        borderColor: 'rgba(79, 70, 229, 1)',
+                        borderWidth: 1,
+                        borderRadius: 4,
+                        hoverBackgroundColor: 'rgba(79, 70, 229, 0.8)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            padding: 10,
+                            cornerRadius: 6,
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        const minutes = Math.floor(context.parsed.y);
+                                        const seconds = Math.round((context.parsed.y - minutes) * 60);
+                                        if (minutes === 0) {
+                                            label += `${seconds} seconds`;
+                                        } else if (seconds === 0) {
+                                            label += `${minutes} minutes`;
+                                        } else {
+                                            label += `${minutes} min ${seconds} sec`;
+                                        }
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return `${value} min`;
+                                }
+                            },
+                            title: { 
+                                display: true, 
+                                text: 'Minutes',
+                                font: {
+                                    size: 12,
+                                    weight: 'bold'
+                                }
+                            }
+                        },
+                        x: {
+                            title: { 
+                                display: true, 
+                                text: 'Hour of Day',
+                                font: {
+                                    size: 12,
+                                    weight: 'bold'
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function showConnectionModal() {
+            settingsModal.classList.remove('hidden');
+        }
+
+        function hideConnectionModal() {
+            settingsModal.classList.add('hidden');
+        }
+
+       
+        function onConnectFailure(responseObject) {
+            console.error('Failed to connect:', responseObject);
+            connectionStatus.classList.remove('bg-green-500');
+            connectionStatus.classList.add('bg-red-500');
+            connectionText.textContent = 'Connection Failed';
+            showNotification('Error', 'Failed to connect to MQTT broker: ' + responseObject.errorMessage, 'error');
+        }
+
+        function onConnectionLost(responseObject) {
+            connected = false;
+            connectionStatus.classList.remove('bg-green-500');
+            connectionStatus.classList.add('bg-red-500');
+            connectionText.textContent = 'Disconnected';
+            console.warn('Connection lost:', responseObject.errorMessage);
+            showNotification('Disconnected', 'Connection to MQTT broker was lost. Please reconnect.', 'warning');
+        }
+
+        function onMessageArrived(message) {
+            console.log('MQTT message received:', {
+                topic: message.destinationName,
+                payload: message.payloadString
+            });
+
+            try {
+                const payload = JSON.parse(message.payloadString);
+
+                if (message.destinationName === TOPICS.SENSOR_DATA) {
+                    handleSensorData(payload);
+                } else if (message.destinationName === TOPICS.AI_INSIGHTS) {
+                    handleAIInsights(payload);
+                }
+            } catch (error) {
+                console.error('Error parsing message:', error);
+            }
+        }
+
+        function handleSensorData(data) {
+        console.log('Received sensor data:', data);
+
+        if (data.fsrValue !== undefined) {
+            pressureValue.textContent = data.fsrValue;
+            const percentage = Math.min(100, (data.fsrValue / 500) * 100);
+            pressureBar.style.width = `${percentage}%`;
+        }
+
+        if (data.isSitting !== undefined) {
+            if (data.isSitting) {
+                if (!isSitting) {
+                    // Sitting just started
+                    startSittingTime = Date.now();
+                    isSitting = true;
+                    sittingIndicator.classList.remove('bg-gray-200');
+                    sittingIndicator.classList.add('bg-green-500');
+                    sittingText.textContent = 'Sitting';
+                    sittingText.classList.remove('text-gray-600');
+                    sittingText.classList.add('text-white');
+                 //   recordSittingStart();
+                    
+                    // Start the continuous timer
+                    startContinuousTimeUpdate();
+                }
+                
+                // The time update is now handled by the interval timer
+            } else {
+                if (isSitting) {
+                    // Sitting just ended
+                    isSitting = false;
+                    sittingIndicator.classList.remove('bg-green-500');
+                    sittingIndicator.classList.add('bg-gray-200');
+                    sittingText.textContent = 'Not Sitting';
+                    sittingText.classList.remove('text-white');
+                    sittingText.classList.add('text-gray-600');
+                  //  recordSittingEnd();
+                    
+                    // Stop the continuous timer
+                    stopContinuousTimeUpdate();
+                    
+                    // Reset time display
+                    timeSeated.textContent = "00:00";
+                    
+                    // Reset alert threshold tracking
+                    localStorage.removeItem('lastAlertThreshold');
+                }
+            }
+        }
+    }
+
+        function handleAIInsights(data) {
+            if (data.insights && data.recommendations) {
+                let recommendationsHTML = '<ul class="list-disc pl-5 text-sm space-y-2">';
+                data.recommendations.forEach(rec => {
+                    recommendationsHTML += `<li class="mb-1">${rec}</li>`;
+                });
+                recommendationsHTML += '</ul>';
+                aiRecommendations.innerHTML = recommendationsHTML;
+                
+                // Show notification for new insights
+                showNotification('New Insights', 'AI has generated new insights about your sitting habits', 'info');
+            } else if (data.message) {
+                aiRecommendations.textContent = data.message;
+            }
+        }
+
+    
+    // Clean up on page unload
+    window.addEventListener('beforeunload', function() {
+        stopContinuousTimeUpdate();
+    });
+
+        function sendSettings() {
+            if (!connected) {
+                console.warn('Not connected to MQTT broker');
+                return;
+            }
+
+            // Convert time setting according to the unit
+            let sittingTimeMs = timeUnit.value === 'seconds' ? 
+                timeSetting * 1000 : 
+                timeSetting * 60 * 1000;
+
+            const settings = {
+                threshold: thresholdSetting,
+                sittingTime: sittingTimeMs,
+                vibrationDuration: vibrationSetting * 1000,
+                autoAlert: autoAlertEnabled
+            };
+
+            console.log('Sending settings:', settings);
+
+            try {
+                const message = new Paho.MQTT.Message(JSON.stringify(settings));
+                message.destinationName = TOPICS.SETTINGS;
+                client.send(message);
+                console.log('Settings sent successfully');
+            } catch (error) {
+                console.error('Error sending settings:', error);
+            }
+        }
+
+        function initSupabase() {
+            if (supabaseConfig.url && supabaseConfig.key) {
+                try {
+                    supabase = window.supabase.createClient(supabaseConfig.url, supabaseConfig.key);
+                    console.log('Supabase client created');
+                    loadSettingsFromSupabase();
+                    loadDailyData();
+                } catch (error) {
+                    console.error('Error initializing Supabase:', error);
+                    showNotification('Error', 'Failed to connect to Supabase database', 'error');
+                }
+            }
+        }
+
+        async function loadSettingsFromSupabase() {
+            if (!supabase) return;
+
+            try {
+                const { data, error } = await supabase
+                    .from('user_settings')
+                    .select('*')
+                    .eq('user_id', USER_ID)
+                    .single();
+
+                if (error) {
+                    console.warn('Error loading settings:', error);
+                    return;
+                }
+
+                if (data) {
+                    thresholdSetting = data.threshold;
+                    
+                    // Handle time in seconds (database stores ms)
+                    timeSetting = data.sitting_time / 1000; 
+                    
+                    vibrationSetting = data.vibration_duration / 1000;
+                    autoAlertEnabled = data.auto_alert !== undefined ? data.auto_alert : true;
+
+                    // Update UI elements
+                    thresholdSlider.value = thresholdSetting;
+                    thresholdValue.textContent = thresholdSetting;
+                    
+                    // Update time controls based on value
+                    if (timeSetting >= 60 && timeSetting % 60 === 0) {
+                        // If it's exactly in minutes, show as minutes
+                        timeUnit.value = 'minutes';
+                        timeValueInput.value = timeSetting / 60;
+                        timeSlider.value = timeSetting;
+                    } else {
+                        timeUnit.value = 'seconds';
+                        timeValueInput.value = timeSetting;
+                        timeSlider.value = timeSetting;
+                    }
+                    
+                    vibrationSlider.value = vibrationSetting;
+                    vibrationValueInput.value = vibrationSetting;
+                    autoAlertToggle.checked = autoAlertEnabled;
+
+                    localStorage.setItem('seatSettings', JSON.stringify({
+                        threshold: thresholdSetting,
+                        sittingTime: timeSetting,
+                        vibrationDuration: vibrationSetting,
+                        autoAlert: autoAlertEnabled,
+                        userId: USER_ID
+                    }));
+
+                    if (connected) sendSettings();
+                }
+            } catch (error) {
+                console.error('Error loading settings:', error);
+            }
+        }
+
+        async function saveSettingsToSupabase() {
+        if (!supabase) {
+            showNotification('Error', 'Database connection not available', 'error');
+            return false;
+        }
+
+        try {
+            // Get time setting in milliseconds
+            let sittingTimeMs = timeUnit.value === 'seconds' ? 
+                timeSetting * 1000 : 
+                timeSetting * 60 * 1000;
+            
+            const settings = {
+                user_id: USER_ID,
+                threshold: thresholdSetting,
+                sitting_time: sittingTimeMs,
+                vibration_duration: vibrationSetting * 1000
+                // Note: Removed auto_alert field if it's not in the database schema
+            };
+
+            // Check if settings exist for this user
+            const { data, error: checkError } = await supabase
+                .from('user_settings')
+                .select('id')
+                .eq('user_id', USER_ID);
+
+            if (checkError) {
+                console.error('Error checking settings:', checkError);
+                throw checkError;
+            }
+
+            let result;
+            if (data && data.length > 0) {
+                // Update existing settings
+                result = await supabase
+                    .from('user_settings')
+                    .update({
+                        threshold: settings.threshold,
+                        sitting_time: settings.sitting_time,
+                        vibration_duration: settings.vibration_duration,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('user_id', USER_ID);
+            } else {
+                // Insert new settings
+                result = await supabase
+                    .from('user_settings')
+                    .insert(settings);
+            }
+
+            if (result.error) {
+                console.error('Database error:', result.error);
+                throw result.error;
+            }
+            
+            console.log('Settings saved to Supabase');
+            return true;
+        } catch (error) {
+            console.error('Error saving settings:', error);
+            showNotification('Error', 'Failed to save settings to database: ' + error.message, 'error');
+            return false;
+        }
+    }
+   
+      
+     
+    let seatTimeUpdateInterval = null;
+    
+  
+    function stopContinuousTimeUpdate() {
+        if (seatTimeUpdateInterval) {
+            clearInterval(seatTimeUpdateInterval);
+            seatTimeUpdateInterval = null;
+        }
+    }
+  
+
+       
+        function updateAnalytics(sessions, alerts) {
+            let totalSeconds = 0;
+            let longestSessionSeconds = 0;
+            const hourlyData = Array(24).fill(0);
+
+            sessions.forEach(session => {
+                if (!session.end_time) return;
+                const start = new Date(session.start_time);
+                const end = new Date(session.end_time);
+                const durationSeconds = (end - start) / 1000;
+
+                totalSeconds += durationSeconds;
+                if (durationSeconds > longestSessionSeconds) {
+                    longestSessionSeconds = durationSeconds;
+                }
+
+                const startHour = start.getHours();
+                const endHour = end.getHours();
+                if (startHour === endHour) {
+                    hourlyData[startHour] += durationSeconds / 60;
+                } else {
+                    const startMinutesInHour = (60 - start.getMinutes()) + (start.getSeconds() / 60);
+                    hourlyData[startHour] += startMinutesInHour;
+                    for (let h = startHour + 1; h < endHour; h++) {
+                        hourlyData[h] += 60;
+                    }
+                    const endMinutesInHour = end.getMinutes() + (end.getSeconds() / 60);
+                    hourlyData[endHour] += endMinutesInHour;
+                }
+            });
+
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = Math.floor(totalSeconds % 60);
+            todaySittingTime.textContent = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+            const longestMinutes = Math.floor(longestSessionSeconds / 60);
+            const longestSecondsRemainder = Math.floor(longestSessionSeconds % 60);
+            longestStretch.textContent = `${longestMinutes.toString().padStart(2, '0')}:${longestSecondsRemainder.toString().padStart(2, '0')}`;
+
+            todayAlerts.textContent = alerts.length;
+            todayStandups.textContent = sessions.length;
+
+            sittingChart.data.datasets[0].data = hourlyData.map(minutes => Math.round(minutes * 10) / 10);
+            sittingChart.update();
+        }
+
+        function updateSessionTable(sessions) {
+            if (!sessions || sessions.length === 0) {
+                sessionTableBody.innerHTML = '<tr><td colspan="4" class="py-6 px-4 text-center text-gray-500">No data available</td></tr>';
+                return;
+            }
+
+            const sortedSessions = [...sessions].sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
+            let tableHtml = '';
+
+            sortedSessions.forEach(session => {
+                const start = new Date(session.start_time);
+                const end = session.end_time ? new Date(session.end_time) : null;
+                
+                let durationText = 'In progress';
+                let durationClass = 'text-indigo-500 font-semibold';
+                
+                if (end) {
+                    const durationSeconds = (end - start) / 1000;
+                    const minutes = Math.floor(durationSeconds / 60);
+                    const seconds = Math.floor(durationSeconds % 60);
+                    durationText = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                    
+                    // Add color coding based on duration
+                    if (durationSeconds > (timeSetting * 2)) {
+                        durationClass = 'text-red-500 font-bold';
+                    } else if (durationSeconds > timeSetting) {
+                        durationClass = 'text-yellow-500 font-semibold';
+                    } else {
+                        durationClass = 'text-green-500 font-semibold';
+                    }
+                }
+
+                const startTime = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const endTime = end ? end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 
+                    '<span class="text-indigo-500 animate-pulse font-semibold">In progress</span>';
+                
+                // Get alerts that occurred during this session
+                let alertCount = 0;
+                if (session.alerts) {
+                    alertCount = session.alerts.length;
+                }
+
+                tableHtml += `
+                <tr class="border-b hover:bg-gray-50 transition-colors">
+                    <td class="py-3 px-4">${startTime}</td>
+                    <td class="py-3 px-4">${endTime}</td>
+                    <td class="py-3 px-4 ${durationClass}">${durationText}</td>
+                    <td class="py-3 px-4">${alertCount}</td>
+                </tr>
+                `;
+            });
+
+            sessionTableBody.innerHTML = tableHtml;
+        }
+
+        function handleSettingsForm(e) {
+        e.preventDefault();
+
+        thresholdSetting = parseInt(thresholdSlider.value);
+        
+        // Get time values
+        if (timeUnit.value === 'seconds') {
+            timeSetting = parseInt(timeValueInput.value);
+        } else {
+            timeSetting = parseInt(timeValueInput.value) * 60;
+        }
+        
+        vibrationSetting = parseInt(vibrationValueInput.value);
+        autoAlertEnabled = autoAlertToggle.checked;
+
+        localStorage.setItem('seatSettings', JSON.stringify({
+            threshold: thresholdSetting,
+            sittingTime: timeSetting,
+            vibrationDuration: vibrationSetting,
+            autoAlert: autoAlertEnabled,
+            userId: USER_ID
+        }));
+
+        saveSettingsToSupabase()
+            .then(success => {
+                sendSettings();
+                if (success) {
+                    showNotification('Success', 'Settings saved successfully!', 'success');
+                } else {
+                    // We'll now handle the error message in the saveSettingsToSupabase function
+                }
+            });
+    }
+
+        function loadSavedSettings() {
+            const savedMqttConfig = localStorage.getItem('mqttConfig');
+            const savedSupabaseConfig = localStorage.getItem('supabaseConfig');
+            const savedSettings = localStorage.getItem('seatSettings');
+
+            if (savedMqttConfig) {
+                mqttConfig = JSON.parse(savedMqttConfig);
+                document.getElementById('broker-url').value = mqttConfig.host;
+                document.getElementById('broker-port').value = mqttConfig.port;
+                document.getElementById('broker-client-id').value = mqttConfig.clientId;
+            }
+
+            if (savedSupabaseConfig) {
+                supabaseConfig = JSON.parse(savedSupabaseConfig);
+                document.getElementById('supabase-url').value = supabaseConfig.url;
+                document.getElementById('supabase-key').value = supabaseConfig.key;
+            }
+
+            if (savedSettings) {
+                const settings = JSON.parse(savedSettings);
+                if (!settings.userId || settings.userId === USER_ID) {
+                    thresholdSetting = settings.threshold || 100;
+                    timeSetting = settings.sittingTime || 60;
+                    vibrationSetting = settings.vibrationDuration || 3;
+                    autoAlertEnabled = settings.autoAlert !== undefined ? settings.autoAlert : true;
+
+                    // Update UI
+                    thresholdSlider.value = thresholdSetting;
+                    thresholdValue.textContent = thresholdSetting;
+                    
+                    // Update time controls based on value
+                    if (timeSetting >= 60 && timeSetting % 60 === 0) {
+                        // If it's exactly in minutes, show as minutes
+                        timeUnit.value = 'minutes';
+                        timeValueInput.value = timeSetting / 60;
+                        timeSlider.value = timeSetting;
+                    } else {
+                        timeUnit.value = 'seconds';
+                        timeValueInput.value = timeSetting;
+                        timeSlider.value = timeSetting;
+                    }
+                    vibrationSlider.value = vibrationSetting;
+                    vibrationValueInput.value = vibrationSetting;
+                    autoAlertToggle.checked = autoAlertEnabled;
+                }
+            }
+        }
+
+        function showNotification(title, message, type = 'info') {
+            // Set colors based on notification type
+            let borderColor = 'border-blue-500';
+            let iconColor = 'text-blue-500';
+            let iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>`;
+            
+            if (type === 'success') {
+                borderColor = 'border-green-500';
+                iconColor = 'text-green-500';
+                iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>`;
+            } else if (type === 'error') {
+                borderColor = 'border-red-500';
+                iconColor = 'text-red-500';
+                iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>`;
+            } else if (type === 'warning') {
+                borderColor = 'border-yellow-500';
+                iconColor = 'text-yellow-500';
+                iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>`;
+            }
+            
+            // Update toast content
+            notificationToast.className = notificationToast.className.replace(/border-\w+-500/g, '') + ' ' + borderColor;
+            notificationToast.querySelector('.text-green-500, .text-red-500, .text-blue-500, .text-yellow-500').className = iconColor;
+            notificationToast.querySelector('.text-green-500, .text-red-500, .text-blue-500, .text-yellow-500').innerHTML = iconSvg;
+            toastTitle.textContent = title;
+            toastMessage.textContent = message;
+            
+            // Show the toast
+            notificationToast.classList.remove('hidden', 'transform', 'translate-y-20', 'opacity-0');
+            
+            // Hide after 5 seconds
+            setTimeout(hideNotification, 5000);
+        }
+        
+        function hideNotification() {
+            notificationToast.classList.add('transform', 'translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                notificationToast.classList.add('hidden');
+            }, 500);
+        }
+        
+        function exportSessionData() {
+            if (!sessionData || sessionData.length === 0) {
+                showNotification('Export Failed', 'No data available to export', 'error');
+                return;
+            }
+            
+            try {
+                // Format data for CSV
+                let csvContent = "start_time,end_time,duration_seconds\n";
+                
+                sessionData.forEach(session => {
+                    if (!session.end_time) return;
+                    
+                    const start = new Date(session.start_time);
+                    const end = new Date(session.end_time);
+                    const durationSeconds = (end - start) / 1000;
+                    
+                    csvContent += `${session.start_time},${session.end_time},${durationSeconds}\n`;
+                });
+                
+                // Create and trigger download
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.setAttribute('hidden', '');
+                a.setAttribute('href', url);
+                a.setAttribute('download', `sitting_data_${dateSelector.value}.csv`);
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                showNotification('Export Successful', 'Session data has been exported to CSV', 'success');
+            } catch (error) {
+                console.error('Error exporting data:', error);
+                showNotification('Export Failed', 'Failed to export session data', 'error');
+            }
+        }
+    </script>
+</body>
+</html>
+
+<!-- Complete Alert Functionality Fix -->
+<script>
+    // Global variables for alert management
+    let isMotorActive = false;
+    let alertCooldownActive = false;
+    let alertCooldownTime = 5000; // 5 seconds cooldown between alerts
+    let permanentAlertCount = 0; // Stable counter that won't decrement
+    
+    // Load permanent alert count on startup
+    async function initializeAlertCount() {
+        const today = new Date();
+        const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const endOfDay = new Date(startOfDay);
+        endOfDay.setDate(endOfDay.getDate() + 1);
+        
+        try {
+            const { data, error } = await supabase
+                .from('vibration_alerts')
+                .select('count')
+                .eq('user_id', USER_ID)
+                .gte('timestamp', startOfDay.toISOString())
+                .lt('timestamp', endOfDay.toISOString())
+                .count();
+                
+            if (error) {
+                console.error('Error counting alerts:', error);
+                return 0;
+            }
+            
+            // Use the count from the database
+            const count = data || 0;
+            console.log(`Loaded ${count} alerts from database`);
+            permanentAlertCount = count;
+            alertCount = count; // Set the regular alertCount too
+            todayAlerts.textContent = count.toString();
+            return count;
+        } catch (error) {
+            console.error('Exception counting alerts:', error);
+            return 0;
+        }
+    }
+    
+    // Fixed function for triggering vibration
+ 
+    // Fixed function for recording vibration alerts to database
+   
+    // Function to refresh only the session table without reloading all data
+    async function refreshSessionTable() {
+        if (!supabase) return;
+        
+        try {
+            const selectedDate = dateSelector.value || new Date().toISOString().split('T')[0];
+            const startDate = new Date(selectedDate);
+            startDate.setHours(0, 0, 0, 0);
+            const endDate = new Date(selectedDate);
+            endDate.setHours(23, 59, 59, 999);
+            
+            // Get sessions
+            const { data: sessions, error: sessionsError } = await supabase
+                .from('sitting_sessions')
+                .select('*')
+                .eq('user_id', USER_ID)
+                .gte('start_time', startDate.toISOString())
+                .lte('start_time', endDate.toISOString())
+                .order('start_time', { ascending: false });
+                
+            if (sessionsError) {
+                console.error('Error loading sessions:', sessionsError);
+                return;
+            }
+            
+            // Get alerts
+            const { data: alerts, error: alertsError } = await supabase
+                .from('vibration_alerts')
+                .select('*')
+                .eq('user_id', USER_ID)
+                .gte('timestamp', startDate.toISOString())
+                .lte('timestamp', endDate.toISOString());
+                
+            if (alertsError) {
+                console.error('Error loading alerts:', alertsError);
+                return;
+            }
+            
+            // Update the session table with the latest data
+            updateSessionTableWithAlerts(sessions || [], alerts || []);
+            
+        } catch (error) {
+            console.error('Error refreshing session table:', error);
+        }
+    }
+    
+    // Completely rewritten function to update session table with proper alert counts
+    function updateSessionTableWithAlerts(sessions, alerts) {
+        if (!sessions || sessions.length === 0) {
+            sessionTableBody.innerHTML = '<tr><td colspan="4" class="py-6 px-4 text-center text-gray-500">No data available</td></tr>';
+            return;
+        }
+        
+        let tableHtml = '';
+        
+        sessions.forEach(session => {
+            const start = new Date(session.start_time);
+            const end = session.end_time ? new Date(session.end_time) : null;
+            
+            let durationText = 'In progress';
+            let durationClass = 'text-indigo-500 font-semibold';
+            
+            if (end) {
+                const durationSeconds = (end - start) / 1000;
+                const minutes = Math.floor(durationSeconds / 60);
+                const seconds = Math.floor(durationSeconds % 60);
+                durationText = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                
+                // Add color coding based on duration
+                if (durationSeconds > (timeSetting * 2)) {
+                    durationClass = 'text-red-500 font-bold';
+                } else if (durationSeconds > timeSetting) {
+                    durationClass = 'text-yellow-500 font-semibold';
+                } else {
+                    durationClass = 'text-green-500 font-semibold';
+                }
+            }
+            
+            const startTime = start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const endTime = end ? end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 
+                '<span class="text-indigo-500 animate-pulse font-semibold">In progress</span>';
+            
+            // Count alerts for this session
+            let sessionAlertCount = 0;
+            if (alerts && alerts.length > 0 && session.id) {
+                // First try to use exact session_id matching
+                sessionAlertCount = alerts.filter(alert => 
+                    alert.session_id === session.id
+                ).length;
+                
+                // If no alerts found by session_id, fallback to timestamp-based matching
+                if (sessionAlertCount === 0) {
+                    sessionAlertCount = alerts.filter(alert => {
+                        const alertTime = new Date(alert.timestamp);
+                        return alertTime >= start && (!end || alertTime <= end);
+                    }).length;
+                }
+            }
+            
+            tableHtml += `
+            <tr class="border-b hover:bg-gray-50 transition-colors">
+                <td class="py-3 px-4">${startTime}</td>
+                <td class="py-3 px-4">${endTime}</td>
+                <td class="py-3 px-4 ${durationClass}">${durationText}</td>
+                <td class="py-3 px-4 font-semibold">${sessionAlertCount}</td>
+            </tr>
+            `;
+        });
+        
+        sessionTableBody.innerHTML = tableHtml;
+    }
+    
+    // Improved loadDailyData function
+    async function loadDailyData() {
+        if (!supabase) return;
+        
+        try {
+            const selectedDate = dateSelector.value || new Date().toISOString().split('T')[0];
+            const startDate = new Date(selectedDate);
+            startDate.setHours(0, 0, 0, 0);
+            const endDate = new Date(selectedDate);
+            endDate.setHours(23, 59, 59, 999);
+            
+            // Get sessions
+            const { data: sessions, error: sessionsError } = await supabase
+                .from('sitting_sessions')
+                .select('*')
+                .eq('user_id', USER_ID)
+                .gte('start_time', startDate.toISOString())
+                .lte('start_time', endDate.toISOString())
+                .order('start_time', { ascending: false });
+                
+            if (sessionsError) {
+                console.error('Error loading sessions:', sessionsError);
+                throw sessionsError;
+            }
+            
+            // Get alerts
+            const { data: alerts, error: alertsError } = await supabase
+                .from('vibration_alerts')
+                .select('*')
+                .eq('user_id', USER_ID)
+                .gte('timestamp', startDate.toISOString())
+                .lte('timestamp', endDate.toISOString());
+                
+            if (alertsError) {
+                console.error('Error loading alerts:', alertsError);
+                throw alertsError;
+            }
+            
+            // Store session data for export
+            sessionData = sessions || [];
+            
+            // Update alert count for today - this is critical to maintain consistent UI
+            const alertsCount = alerts ? alerts.length : 0;
+            permanentAlertCount = alertsCount;
+            alertCount = alertsCount; // Also update the original variable for compatibility
+            todayAlerts.textContent = alertsCount.toString();
+            
+            console.log(`Loaded ${sessions ? sessions.length : 0} sessions and ${alertsCount} alerts`);
+            
+            // Update analytics
+            updateAnalytics(sessions || [], alerts || []);
+            
+            // Update session table with alert counts
+            updateSessionTableWithAlerts(sessions || [], alerts || []);
+            
+            // Generate AI recommendations
+            
+        } catch (error) {
+            console.error('Error loading daily data:', error);
+            showNotification('Error', 'Failed to load data: ' + error.message, 'error');
+        }
+    }
+    
+    // Fixed function for checking and triggering auto alerts
+    function checkAndTriggerAutoAlert(seatedDuration) {
+        if (!autoAlertEnabled || !isSitting || isMotorActive || alertCooldownActive) {
+            return;
+        }
+        
+        // Convert sitting time threshold to milliseconds
+        const thresholdMs = timeSetting * 1000;
+        
+        // Only trigger alerts at precise multiples of the threshold
+        if (seatedDuration >= thresholdMs) {
+            const multiple = Math.floor(seatedDuration / thresholdMs);
+            const lastThreshold = localStorage.getItem('lastAlertThreshold');
+            
+            // Only alert if this is a new threshold multiple
+            if (lastThreshold === null || parseInt(lastThreshold) < multiple) {
+                console.log(`Auto-alert triggered: seated for ${Math.round(seatedDuration/1000)}s, threshold: ${timeSetting}s, multiple: ${multiple}`);
+                localStorage.setItem('lastAlertThreshold', multiple);
+                triggerVibration();
+            }
+        }
+    }
+    
+    // Fixed continuous timer for seated time with auto-alert check
+    function startContinuousTimeUpdate() {
+        // Clear any existing interval
+        if (seatTimeUpdateInterval) {
+            clearInterval(seatTimeUpdateInterval);
+        }
+        
+        // Start a new interval that updates every second
+        seatTimeUpdateInterval = setInterval(() => {
+            if (isSitting && startSittingTime) {
+                const seatedDuration = Date.now() - startSittingTime;
+                const minutes = Math.floor(seatedDuration / 60000);
+                const seconds = Math.floor((seatedDuration % 60000) / 1000);
+                
+                // Update the UI display
+                timeSeated.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                
+                // Check if we should trigger an auto-alert
+                checkAndTriggerAutoAlert(seatedDuration);
+            }
+        }, 1000); // Update every second
+    }
+    
+    // Special initialization for alert management
+    document.addEventListener('DOMContentLoaded', async function() {
+        // Wait for Supabase to initialize
+        setTimeout(async () => {
+            if (supabase) {
+                await initializeAlertCount();
+                console.log('Alert system initialized');
+            }
+        }, 1000);
+    });
+    
+    // Override onConnect to reinitialize alert count when connection is established
+    const originalOnConnect = onConnect;
+    onConnect = function() {
+        // Call the original function
+        originalOnConnect();
+        
+        // Then initialize our alert count
+        setTimeout(async () => {
+            await initializeAlertCount();
+            console.log('Alert count initialized after connection');
+        }, 1000);
+    };
+</script>
+
+<!-- Database Error Fix -->
+<script>
+    // Fixed function for recording vibration alerts to database
+    // async function recordVibrationAlert() {
+    //     if (!supabase) {
+    //         console.error('Supabase not initialized');
+    //         return;
+    //     }
+        
+    //     try {
+    //         // Get the current session ID
+    //         const currentSessionId = localStorage.getItem('currentSessionId');
+    //         const timestamp = new Date().toISOString();
+            
+    //         // Simplified alert data - removing potentially problematic fields
+    //         const alertData = {
+    //             user_id: USER_ID,
+    //             timestamp: timestamp
+    //             // Removed session_id field which might be causing the error
+    //         };
+            
+    //         console.log('Recording alert with simplified data:', alertData);
+            
+    //         // Insert the alert record
+    //         const { data, error } = await supabase
+    //             .from('vibration_alerts')
+    //             .insert(alertData);
+                
+    //         if (error) {
+    //             console.error('Detailed database error:', error);
+    //             showNotification('Warning', 'Database error: ' + error.message, 'warning');
+    //             return;
+    //         }
+            
+    //         console.log('Alert recorded successfully:', data);
+            
+    //         // Refresh the session table after successful insert
+    //         setTimeout(() => {
+    //             loadDailyData();
+    //         }, 1000);
+            
+    //     } catch (error) {
+    //         console.error('Exception recording alert:', error);
+    //         showNotification('Error', 'Exception: ' + error.message, 'error');
+    //     }
+    // }
+    
+    // Improved function to trigger vibration that won't be affected by database errors
+    function triggerVibration() {
+        if (!connected) {
+            showNotification('Error', 'Not connected to MQTT broker', 'error');
+            return;
+        }
+        
+        // Prevent multiple alerts during active vibration or cooldown
+        if (isMotorActive || alertCooldownActive) {
+            console.log('Vibration already active or in cooldown, ignoring trigger');
+            return;
+        }
+
+        const command = { motor: true };
+        console.log('Sending vibration command:', command);
+
+        try {
+            // First increment the counter - this ensures the UI stays consistent
+            // regardless of database success or failure
+            alertCount++;
+            todayAlerts.textContent = alertCount.toString();
+            
+            // Send motor command to MQTT
+            const message = new Paho.MQTT.Message(JSON.stringify(command));
+            message.destinationName = TOPICS.COMMAND;
+            client.send(message);
+            
+            // Update motor status
+            motorStatus.textContent = 'Active';
+            motorStatus.classList.add('text-red-500', 'animate-pulse');
+            motorStatus.classList.remove('text-gray-500');
+            isMotorActive = true;
+            alertCooldownActive = true;
+            
+            // Try to record the alert to database - if this fails, at least the UI is already updated
+          //  recordVibrationAlert();
+            
+            // Vibration duration timer
+            setTimeout(() => {
+                motorStatus.textContent = 'Inactive';
+                motorStatus.classList.remove('text-red-500', 'animate-pulse');
+                motorStatus.classList.add('text-gray-500');
+                isMotorActive = false;
+            }, vibrationSetting * 1000);
+            
+            // Cooldown timer
+            setTimeout(() => {
+                alertCooldownActive = false;
+            }, Math.max(vibrationSetting * 1000, 5000));
+            
+        } catch (error) {
+            console.error('Error triggering vibration:', error);
+            showNotification('Error', 'Error: ' + error.message, 'error');
+            isMotorActive = false;
+            alertCooldownActive = false;
+        }
+    }
+    
+    // Debug function to check your database schema
+    async function checkDatabaseSchema() {
+        if (!supabase) return;
+        
+        try {
+            // Check the schema of the vibration_alerts table
+            const { data, error } = await supabase.rpc('get_schema_information', {
+                table_name: 'vibration_alerts'
+            });
+            
+            if (error) {
+                console.error('Error checking schema:', error);
+                return;
+            }
+            
+            console.log('Database schema for vibration_alerts:', data);
+            
+            // If RPC doesn't work, try a simple select to see fields
+            const { data: sampleData, error: sampleError } = await supabase
+                .from('vibration_alerts')
+                .select('*')
+                .limit(1);
+                
+            if (sampleError) {
+                console.error('Error fetching sample:', sampleError);
+            } else {
+                console.log('Sample alert data structure:', sampleData);
+            }
+        } catch (error) {
+            console.error('Exception checking schema:', error);
+        }
+    }
+    
+    // Run the schema check once to see what fields are available
+    setTimeout(() => {
+        if (supabase) {
+            checkDatabaseSchema();
+        }
+    }, 2000);
+</script>
+
+
+<!-- Fix for Incorrect In-Progress Sessions -->
+<script>
+    // Function to close any incorrectly open sessions
+    async function closeStrandedSessions() {
+        if (!supabase) {
+            console.error('Supabase not initialized');
+            return;
+        }
+        
+        try {
+            // Get all in-progress sessions for this user
+            const { data: openSessions, error } = await supabase
+                .from('sitting_sessions')
+                .select('*')
+                .eq('user_id', USER_ID)
+                .is('end_time', null);
+                
+            if (error) {
+                console.error('Error fetching open sessions:', error);
+                return;
+            }
+            
+            console.log(`Found ${openSessions ? openSessions.length : 0} open sessions`);
+            
+            if (openSessions && openSessions.length > 0) {
+                // Close all open sessions with current time
+                const now = new Date().toISOString();
+                
+                for (const session of openSessions) {
+                    console.log(`Closing stranded session ID: ${session.id}`);
+                    
+                    const { error: updateError } = await supabase
+                        .from('sitting_sessions')
+                        .update({ end_time: now })
+                        .eq('id', session.id);
+                        
+                    if (updateError) {
+                        console.error(`Error closing session ${session.id}:`, updateError);
+                    }
+                }
+                
+                // After closing sessions, reload the data
+                showNotification('Sessions Updated', 'Fixed incorrectly open sessions', 'info');
+                loadDailyData();
+            }
+        } catch (error) {
+            console.error('Exception closing stranded sessions:', error);
+        }
+    }
+    
+    // Add a button to fix stranded sessions
+    function addFixSessionsButton() {
+        // Create the button if it doesn't exist
+        if (!document.getElementById('fix-sessions-btn')) {
+            const analyticsHeader = document.querySelector('.flex.justify-between.items-center.mb-6');
+            
+            if (analyticsHeader) {
+                const fixButton = document.createElement('button');
+                fixButton.id = 'fix-sessions-btn';
+                fixButton.className = 'ml-2 px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-300 shadow-sm transition duration-300 text-sm flex items-center';
+                fixButton.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v3.586L7.707 9.293a1 1 0 00-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 10.586V7z" clip-rule="evenodd" />
+                    </svg>
+                    Fix Open Sessions
+                `;
+                
+                fixButton.addEventListener('click', closeStrandedSessions);
+                analyticsHeader.appendChild(fixButton);
+            }
+        }
+    }
+    
+    // Improved session recording functions
+    // function recordSittingStart() {
+    //     if (!supabase) return;
+        
+    //     // First check if we already have an open session
+    //     closeStrandedSessions().then(() => {
+    //         // Then create a new session
+    //         try {
+    //             supabase
+    //                 .from('sitting_sessions')
+    //                 .insert({
+    //                     user_id: USER_ID,
+    //                     start_time: new Date().toISOString(),
+    //                     end_time: null
+    //                 })
+    //                 .select()
+    //                 .then(({ data, error }) => {
+    //                     if (error) {
+    //                         console.error('Error recording sitting start:', error);
+    //                         return;
+    //                     }
+                        
+    //                     if (data && data.length > 0) {
+    //                         localStorage.setItem('currentSessionId', data[0].id);
+    //                         console.log('Started new session with ID:', data[0].id);
+                            
+    //                         // Update stand-up count
+    //                         const standupCount = parseInt(todayStandups.textContent) + 1;
+    //                         todayStandups.textContent = standupCount.toString();
+    //                     }
+    //                 });
+    //         } catch (error) {
+    //             console.error('Exception recording sitting start:', error);
+    //         }
+    //     });
+    // }
+    
+    // Improved session end recording
+    // async function recordSittingEnd() {
+    //     if (!supabase) return;
+        
+    //     try {
+    //         const sessionId = localStorage.getItem('currentSessionId');
+    //         if (!sessionId) {
+    //             console.warn('No current session ID found');
+    //             return;
+    //         }
+            
+    //         const endTime = new Date().toISOString();
+            
+    //         // End the specific session
+    //         const { error } = await supabase
+    //             .from('sitting_sessions')
+    //             .update({ end_time: endTime })
+    //             .eq('id', sessionId);
+                
+    //         if (error) {
+    //             console.error('Error recording sitting end:', error);
+    //             return;
+    //         }
+            
+    //         console.log('Ended session:', sessionId);
+            
+    //         // Clear the current session ID
+    //         localStorage.removeItem('currentSessionId');
+            
+    //         // Check if this session was the longest
+    //         if (startSittingTime) {
+    //             const durationSeconds = (new Date() - startSittingTime) / 1000;
+    //             const durationMinutes = Math.floor(durationSeconds / 60);
+    //             const durationRemainingSeconds = Math.floor(durationSeconds % 60);
+                
+    //             // Get current longest stretch
+    //             const [longestMinutes, longestSeconds] = longestStretch.textContent.split(':').map(Number);
+    //             const longestDurationSeconds = longestMinutes * 60 + longestSeconds;
+                
+    //             // Update if current session is longer
+    //             if (durationSeconds > longestDurationSeconds) {
+    //                 longestStretch.textContent = `${durationMinutes.toString().padStart(2, '0')}:${durationRemainingSeconds.toString().padStart(2, '0')}`;
+    //             }
+    //         }
+            
+    //         // Reload data to update UI
+    //         loadDailyData();
+    //     } catch (error) {
+    //         console.error('Exception recording sitting end:', error);
+    //     }
+    // }
+    
+    // Add a check on page load to clean up stranded sessions
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add the fix button to the UI
+        setTimeout(addFixSessionsButton, 1000);
+        
+        // Automatically close stranded sessions on page load
+        setTimeout(closeStrandedSessions, 2000);
+    });
+    
+    // Override the existing handleSensorData function to ensure sessions are properly handled
+    const originalHandleSensorData = handleSensorData;
+    handleSensorData = function(data) {
+        // Call original function
+        originalHandleSensorData(data);
+        
+        // Additional checks for session consistency
+        if (data.isSitting === false && !isSitting) {
+            // We're not sitting and the sensor confirms this - make sure no open sessions
+            closeStrandedSessions();
+        }
+    };
+</script>
+
+
+
+<script>
+    // ============== AI MONITORING SYSTEM - STANDALONE VERSION ==============
+// This version focuses on ensuring logs are displayed and confidence is shown
+
+// Configuration
+const API_URL = 'http://192.168.1.4:5000'; // Update with your actual API URL
+const CHECK_INTERVAL_MS = 5000; // Check every 5 seconds
+
+// State variables
+let aiEnabled = false;
+let aiCheckTimer = null;
+let aiAlertCount = 0;
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    console.log("AI System: Initializing");
+    
+    // Setup toggle button
+    const aiToggle = document.getElementById('ai-toggle');
+    if (aiToggle) {
+        console.log("AI System: Found toggle button");
+        aiToggle.addEventListener('change', function() {
+            toggleAiSystem(aiToggle.checked);
+        });
+        
+        // Check initial state
+        if (aiToggle.checked) {
+            toggleAiSystem(true);
+        }
+    } else {
+        console.error("AI System: Toggle button not found!");
+    }
+    
+    // Setup log clear button
+    const clearLogBtn = document.getElementById('clear-log-btn');
+    if (clearLogBtn) {
+        clearLogBtn.addEventListener('click', function() {
+            const aiLog = document.getElementById('ai-log');
+            if (aiLog) {
+                aiLog.innerHTML = '<div class="text-gray-400">Log cleared</div>';
+                console.log("AI System: Log cleared");
+            }
+        });
+    }
+    
+    // Setup recommendations button
+    const aiSettingsButton = document.getElementById('ai-settings-button');
+    if (aiSettingsButton) {
+        aiSettingsButton.addEventListener('click', function() {
+            getAiRecommendations();
+        });
+    }
+    
+    // Setup apply settings button
+    const applyAiSettings = document.getElementById('apply-ai-settings');
+    if (applyAiSettings) {
+        applyAiSettings.addEventListener('click', function() {
+            applyRecommendedSettings();
+        });
+    }
+    
+    // Setup cancel button
+    const cancelAiSettings = document.getElementById('cancel-ai-settings');
+    if (cancelAiSettings) {
+        cancelAiSettings.addEventListener('click', function() {
+            const modal = document.getElementById('ai-settings-modal');
+            if (modal) modal.classList.add('hidden');
+        });
+    }
+    
+    // Add initial log message
+    addToAiLog("AI system initialized - click toggle to activate", "system");
+});
+
+// Toggle AI system on/off
+function toggleAiSystem(enabled) {
+    aiEnabled = enabled;
+    console.log("AI System: Toggled to", enabled ? "ON" : "OFF");
+    
+    if (enabled) {
+        // Start monitoring
+        addToAiLog("AI system activated", "system");
+        startAiMonitoring();
+    } else {
+        // Stop monitoring
+        addToAiLog("AI system deactivated", "system");
+        stopAiMonitoring();
+    }
+}
+
+// Start AI monitoring
+function startAiMonitoring() {
+    // Clear any existing timer
+    if (aiCheckTimer) {
+        clearInterval(aiCheckTimer);
+    }
+    
+    // Set mode to starting
+    updateAiMode("Starting...");
+    
+    // Setup periodic checks
+    aiCheckTimer = setInterval(function() {
+        // Only check if sitting
+        if (isSitting && startSittingTime) {
+            const currentTime = Date.now();
+            const fsrValue = parseInt(pressureValue.textContent) || 0;
+            const sittingTime = Math.floor((currentTime - startSittingTime) / 1000);
+            
+            // Log periodically (but not every time to avoid spam)
+            if (sittingTime % 15 === 0 || sittingTime < 30) {
+                console.log(`AI System: Monitoring - FSR: ${fsrValue}, Time: ${sittingTime}s`);
+            }
+            
+            // Check AI prediction
+            checkAiPrediction(fsrValue, sittingTime);
+        }
+    }, CHECK_INTERVAL_MS);
+    
+    addToAiLog("AI monitoring started", "system");
+}
+
+// Stop AI monitoring
+function stopAiMonitoring() {
+    if (aiCheckTimer) {
+        clearInterval(aiCheckTimer);
+        aiCheckTimer = null;
+    }
+    
+    updateAiMode("Disabled");
+    addToAiLog("AI monitoring stopped", "system");
+}
+
+// Update the AI mode display
+function updateAiMode(mode) {
+    const aiMode = document.getElementById('ai-mode');
+    if (aiMode) {
+        aiMode.textContent = mode;
+        console.log("AI System: Mode updated to", mode);
+    }
+}
+
+// Update confidence display
+function updateAiConfidence(confidence) {
+    const aiConfidence = document.getElementById('ai-confidence');
+    if (aiConfidence) {
+        aiConfidence.textContent = confidence;
+        console.log("AI System: Confidence updated to", confidence);
+    }
+}
+
+// Add a message to the AI log
+function addToAiLog(message, type = 'info') {
+    const aiLog = document.getElementById('ai-log');
+    if (!aiLog) {
+        console.error("AI System: Log element not found!");
+        return;
+    }
+    
+    const timestamp = new Date().toLocaleTimeString();
+    let logClass = 'text-gray-600';
+    
+    switch (type) {
+        case 'system':
+            logClass = 'text-gray-400';
+            break;
+        case 'prediction':
+            logClass = 'text-blue-600';
+            break;
+        case 'alert':
+            logClass = 'text-red-600 font-bold';
+            break;
+        case 'success':
+            logClass = 'text-green-600';
+            break;
+        case 'error':
+            logClass = 'text-red-500';
+            break;
+    }
+    
+    // Create log entry
+    const logEntry = document.createElement('div');
+    logEntry.className = logClass;
+    logEntry.innerHTML = `[${timestamp}] ${message}`;
+    
+    // Add to log and scroll to bottom
+    aiLog.appendChild(logEntry);
+    aiLog.scrollTop = aiLog.scrollHeight;
+    
+    // Keep log at reasonable size
+    if (aiLog.children.length > 50) {
+        aiLog.removeChild(aiLog.firstChild);
+    }
+    
+    // Also log to console for debugging
+    console.log(`AI System [${type}]: ${message}`);
+}
+
+// Check AI prediction
+function checkAiPrediction(fsrValue, sittingTime) {
+    if (!aiEnabled) return;
+    
+    console.log("AI System: Checking prediction for FSR:", fsrValue, "Time:", sittingTime);
+    
+    fetch(`${API_URL}/predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            fsr_value: fsrValue,
+            sitting_time_seconds: sittingTime
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log("AI System: Received prediction:", data);
+        
+        // Update confidence
+        const confidencePercent = Math.round(data.confidence * 100);
+        updateAiConfidence(`${confidencePercent}%`);
+        
+        // Update mode based on confidence
+        if (confidencePercent < 60) {
+            updateAiMode("Learning");
+        } else if (confidencePercent < 85) {
+            updateAiMode("Adaptive");
+        } else {
+            updateAiMode("Confident");
+        }
+        
+        // Log prediction result
+        addToAiLog(
+            `FSR: ${fsrValue}, Time: ${sittingTime}s, Prediction: ${data.should_vibrate ? 'VIBRATE' : 'No Alert'} (${confidencePercent}% confidence)`,
+            "prediction"
+        );
+        
+        // Add reasoning if available
+        if (data.reasoning) {
+            addToAiLog(`Reasoning: ${data.reasoning}`, "info");
+        }
+        
+        // Handle vibration if recommended
+        if (data.should_vibrate) {
+            if (!isMotorActive && !alertCooldownActive) {
+                addToAiLog(`AI triggering vibration alert!`, "alert");
+                
+                // Trigger vibration
+                triggerAiVibration();
+                
+                // Update counter
+                aiAlertCount++;
+                const aiAlerts = document.getElementById('ai-alerts');
+                if (aiAlerts) {
+                    aiAlerts.textContent = aiAlertCount;
+                }
+            }
+        }
+    })
+    .catch(error => {
+        console.error("AI System: Prediction error:", error);
+        addToAiLog(`Error: ${error.message}`, "error");
+    });
+}
+
+// Trigger vibration from AI
+function triggerAiVibration() {
+    if (!connected) {
+        addToAiLog("Error: MQTT broker not connected", "error");
+        return;
+    }
+    
+    if (isMotorActive || alertCooldownActive) {
+        addToAiLog("Cannot trigger: vibration already active", "info");
+        return;
+    }
+    
+    try {
+        // Prepare MQTT message
+        const command = { motor: true };
+        const message = new Paho.MQTT.Message(JSON.stringify(command));
+        message.destinationName = TOPICS.COMMAND;
+        
+        // Send command
+        client.send(message);
+        addToAiLog("Vibration command sent", "alert");
+        
+        // Update motor status
+        motorStatus.textContent = 'AI Alert';
+        motorStatus.classList.remove('text-gray-500');
+        motorStatus.classList.add('text-purple-600', 'animate-pulse', 'font-bold');
+        
+        // Set flags
+        isMotorActive = true;
+        alertCooldownActive = true;
+        
+        // Record to database
+        recordAiAlert();
+        
+        // Set timers for reset
+        const vibrationDuration = 3000; // 3 seconds
+        
+        setTimeout(() => {
+            motorStatus.textContent = 'Inactive';
+            motorStatus.classList.remove('text-purple-600', 'animate-pulse', 'font-bold');
+            motorStatus.classList.add('text-gray-500');
+            isMotorActive = false;
+        }, vibrationDuration);
+        
+        setTimeout(() => {
+            alertCooldownActive = false;
+        }, 5000); // 5 second cooldown
+        
+    } catch (error) {
+        console.error("AI System: Error triggering vibration:", error);
+        addToAiLog(`Error: ${error.message}`, "error");
+        
+        // Reset flags in case of error
+        isMotorActive = false;
+        alertCooldownActive = false;
+    }
+}
+
+// Record AI alert to database
+// Update the recordAiAlert function to remove the problematic column
+async function recordAiAlert() {
+    if (!supabase) {
+        console.error("AI System: Supabase not initialized");
+        return;
+    }
+    
+    try {
+        // Create alert data WITHOUT the ai_triggered column
+        const alertData = {
+            user_id: USER_ID,
+            timestamp: new Date().toISOString()
+            // Removed ai_triggered column
+        };
+        
+        // Insert record
+        const { data, error } = await supabase
+            .from('vibration_alerts')
+            .insert(alertData);
+            
+        if (error) {
+            console.error("AI System: Database error:", error);
+            addToAiLog(`Database error: ${error.message}`, "error");
+            return;
+        }
+        
+        addToAiLog("Alert recorded to database", "success");
+        
+        // Update analytics after delay
+        setTimeout(() => {
+            loadDailyData();
+        }, 2000);
+        
+    } catch (error) {
+        console.error("AI System: Error recording alert:", error);
+        addToAiLog(`Database error: ${error.message}`, "error");
+    }
+}
+// Get AI recommendations
+function getAiRecommendations() {
+    const modal = document.getElementById('ai-settings-modal');
+    if (modal) {
+        modal.classList.remove('hidden');
+    }
+    
+    addToAiLog("Fetching AI recommendations...", "info");
+    
+    // Get current time settings
+    let timeMinutes = 1;
+    if (timeUnit.value === 'minutes') {
+        timeMinutes = parseInt(timeValueInput.value) || 1;
+    } else {
+        timeMinutes = Math.max(1, Math.ceil((parseInt(timeValueInput.value) || 60) / 60));
+    }
+    
+    fetch(`${API_URL}/recommend-settings?sitting_time_minutes=${timeMinutes}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`API error: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log("AI System: Received recommendations:", data);
+            
+            // Update recommendations display
+            const settings = data.recommended_settings;
+            
+            // Update threshold
+            const thresholdElement = document.getElementById('ai-rec-threshold');
+            if (thresholdElement && settings.threshold) {
+                thresholdElement.textContent = settings.threshold.toString();
+            }
+            
+            // Update time
+            const timeElement = document.getElementById('ai-rec-time');
+            if (timeElement && settings.sitting_time_seconds) {
+                const minutes = Math.floor(settings.sitting_time_seconds / 60);
+                const seconds = settings.sitting_time_seconds % 60;
+                
+                if (minutes > 0) {
+                    timeElement.textContent = `${minutes} minutes ${seconds} seconds`;
+                } else {
+                    timeElement.textContent = `0 minutes ${seconds} seconds`;
+                }
+            }
+            
+            // Update vibration
+            const vibrationElement = document.getElementById('ai-rec-vibration');
+            if (vibrationElement && settings.vibration_duration_seconds) {
+                vibrationElement.textContent = `${settings.vibration_duration_seconds} seconds`;
+            }
+            
+            // Log success
+            addToAiLog(`Received recommendations: ${settings.threshold} threshold, ${Math.floor(settings.sitting_time_seconds / 60)}m ${settings.sitting_time_seconds % 60}s time`, "success");
+        })
+        .catch(error => {
+            console.error("AI System: Recommendation error:", error);
+            addToAiLog(`Error: ${error.message}`, "error");
+        });
+}
+
+// Apply recommended settings
+function applyRecommendedSettings() {
+    try {
+        // Get values from UI
+        const thresholdElement = document.getElementById('ai-rec-threshold');
+        const timeElement = document.getElementById('ai-rec-time');
+        const vibrationElement = document.getElementById('ai-rec-vibration');
+        
+        // Parse threshold
+        const threshold = parseInt(thresholdElement.textContent) || 180;
+        
+        // Parse time
+        const timeText = timeElement.textContent;
+        const minutesMatch = timeText.match(/(\d+) minutes/);
+        const secondsMatch = timeText.match(/(\d+) seconds/);
+        
+        let totalSeconds = 0;
+        if (minutesMatch && minutesMatch[1]) {
+            totalSeconds += parseInt(minutesMatch[1]) * 60;
+        }
+        if (secondsMatch && secondsMatch[1]) {
+            totalSeconds += parseInt(secondsMatch[1]);
+        }
+        
+        if (totalSeconds === 0) totalSeconds = 60; // Default if parsing fails
+        
+        // Parse vibration
+        const vibrationText = vibrationElement.textContent;
+        const vibMatch = vibrationText.match(/(\d+) seconds/);
+        const vibDuration = (vibMatch && vibMatch[1]) ? parseInt(vibMatch[1]) : 3;
+        
+        console.log("AI System: Applying settings:", {
+            threshold: threshold,
+            time: totalSeconds,
+            vibration: vibDuration
+        });
+        
+        // Update UI controls
+        thresholdSlider.value = threshold;
+        thresholdValue.textContent = threshold;
+        
+        if (totalSeconds >= 60 && totalSeconds % 60 === 0) {
+            // If it's exact minutes
+            timeUnit.value = 'minutes';
+            timeValueInput.value = totalSeconds / 60;
+            timeSlider.value = totalSeconds;
+        } else {
+            // If it has seconds
+            timeUnit.value = 'seconds';
+            timeValueInput.value = totalSeconds;
+            timeSlider.value = totalSeconds;
+        }
+        
+        vibrationSlider.value = vibDuration;
+        vibrationValueInput.value = vibDuration;
+        
+        // Update internal variables
+        thresholdSetting = threshold;
+        timeSetting = totalSeconds;
+        vibrationSetting = vibDuration;
+        
+        // Save to localStorage
+        localStorage.setItem('seatSettings', JSON.stringify({
+            threshold: thresholdSetting,
+            sittingTime: timeSetting,
+            vibrationDuration: vibrationSetting,
+            autoAlert: autoAlertEnabled,
+            userId: USER_ID
+        }));
+        
+        // Save to database
+        saveSettingsToSupabase()
+            .then(success => {
+                if (success) {
+                    // Send settings to device
+                    sendSettings();
+                    
+                    // Show notification
+                    showNotification('Success', 'AI recommended settings applied!', 'success');
+                    
+                    // Log action
+                    addToAiLog(`Applied recommended settings: Threshold=${threshold}, Time=${totalSeconds}s, Vibration=${vibDuration}s`, "success");
+                    
+                    // Hide modal
+                    const modal = document.getElementById('ai-settings-modal');
+                    if (modal) modal.classList.add('hidden');
+                } else {
+                    addToAiLog("Failed to save settings to database", "error");
+                }
+            });
+    } catch (error) {
+        console.error("AI System: Error applying settings:", error);
+        addToAiLog(`Error: ${error.message}`, "error");
+    }
+}
+</script>
+
+
+<script>
+    // AI System Toggle Management
+    document.addEventListener('DOMContentLoaded', function() {
+        const aiToggle = document.getElementById('ai-toggle');
+        
+        // Retrieve saved AI toggle state from localStorage
+        const savedAIState = localStorage.getItem('aiToggleEnabled');
+        
+        if (savedAIState !== null) {
+            // Convert stored string to boolean
+            const isAIEnabled = savedAIState === 'true';
+            
+            // Set the toggle switch to match the saved state
+            aiToggle.checked = isAIEnabled;
+            
+            // Trigger initial AI system state based on saved preference
+            toggleAiSystem(isAIEnabled);
+        } else {
+            // If no saved state, default to disabled
+            aiToggle.checked = false;
+            toggleAiSystem(false);
+        }
+
+        // Add event listener to save state whenever toggle changes
+        aiToggle.addEventListener('change', function() {
+            const isAIEnabled = aiToggle.checked;
+            
+            // Save the current state to localStorage
+            localStorage.setItem('aiToggleEnabled', isAIEnabled.toString());
+            
+            // Toggle AI system
+            toggleAiSystem(isAIEnabled);
+        });
+    });
+
+    // Update existing toggleAiSystem function to handle AI mode switching
+    function toggleAiSystem(enabled) {
+        aiEnabled = enabled;
+        console.log("AI System: Toggled to", enabled ? "ON" : "OFF");
+        
+        if (enabled) {
+            // Start monitoring
+            addToAiLog("AI system activated", "system");
+            startAiMonitoring();
+            
+            // Show notification to the user
+            showNotification('AI Mode', 'AI is now controlling vibration alerts. Your saved settings are temporarily disabled.', 'info');
+        } else {
+            // Stop monitoring
+            addToAiLog("AI system deactivated", "system");
+            stopAiMonitoring();
+            
+            // Show notification to the user
+            showNotification('Manual Mode', 'Using your saved settings for alerts. AI recommendations are disabled.', 'info');
+        }
+    }
+    </script>

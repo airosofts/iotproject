@@ -1,0 +1,7 @@
+Optimal FSR thresholds for different sitting times:
+Time: 30 seconds, FSR: 1023
+Time: 60 seconds, FSR: 1023
+Time: 120 seconds, FSR: 1023
+Time: 180 seconds, FSR: 1023
+Time: 300 seconds, FSR: 1023
+Time: 600 seconds, FSR: 1023
