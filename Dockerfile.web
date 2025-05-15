@@ -1,20 +1,25 @@
+# Use Python 3.10 slim base image
 FROM python:3.10-slim
 
+# Set working directory
 WORKDIR /app
 
-# Install dependencies
+# Install system dependencies (for py3dns and smtplib)
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements.txt and install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code including models
+# Copy application code
 COPY . .
 
-# Set environment variables with correct paths
-ENV MODEL_PATH=/app/models/seat_monitor_model.pkl
-ENV THRESHOLDS_PATH=/app/models/optimal_thresholds.txt
-ENV FLASK_APP=api.py
+# Set environment variables
 ENV FLASK_ENV=production
-ENV PORT=8000
+ENV PORT=8080
 
-# Command to run the Flask app directly
-CMD ["sh", "-c", "python -m flask run --host=0.0.0.0 --port=$PORT"]
+# Run the app with gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "emails:app"]

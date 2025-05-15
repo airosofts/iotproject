@@ -1,2 +1,1 @@
-web: gunicorn api:app
-worker: python main.py
+web: gunicorn emails:app
