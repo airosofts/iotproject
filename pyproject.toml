@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "seat-monitor-system"
+version = "1.0.0"
+description = "A smart monitoring system for tracking sitting patterns"
+readme = "README.md"
+requires-python = ">=3.10"
