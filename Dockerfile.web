@@ -6,13 +6,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code including models
 COPY . .
 
-# Create directory for models
-RUN mkdir -p models
-
-# Set environment variables
+# Set environment variables with correct paths
 ENV MODEL_PATH=/app/models/seat_monitor_model.pkl
 ENV THRESHOLDS_PATH=/app/models/optimal_thresholds.txt
 ENV PORT=8000
