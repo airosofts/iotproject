@@ -9,6 +9,8 @@ import json
 import time
 from datetime import datetime
 
+
+# Configure logging
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -20,8 +22,9 @@ logging.basicConfig(
 
 logger = logging.getLogger("seat_monitor_api")
 
+# This is the important line that gunicorn looks for:
 app = Flask(__name__)
-# Enable CORS with more options to ensure compatibility
+# Enable CORS
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 # Path to the model file
