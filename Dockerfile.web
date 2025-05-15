@@ -12,7 +12,9 @@ COPY . .
 # Set environment variables with correct paths
 ENV MODEL_PATH=/app/models/seat_monitor_model.pkl
 ENV THRESHOLDS_PATH=/app/models/optimal_thresholds.txt
+ENV FLASK_APP=api.py
+ENV FLASK_ENV=production
 ENV PORT=8000
 
-# Command to run the Flask app
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "api:app"]
+# Command to run the Flask app directly
+CMD ["sh", "-c", "python -m flask run --host=0.0.0.0 --port=$PORT"]
